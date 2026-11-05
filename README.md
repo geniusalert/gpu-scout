@@ -80,3 +80,11 @@ Submission status: Telegram and AgentMail credentials validate; `DEMO_MODE=false
 ## Telegram availability
 
 Telegram hosts the chat interface; the polling Python process must stay running to answer. On this workstation the bot can be started with `.\.venv\Scripts\python bot.py`. Closing that process or turning off the computer takes the bot offline. The source repository alone does not deploy the process. A continuously available public submission requires a container host such as Maritime with persistent `/data` storage and the environment variables from `.env.example`. Keep exactly one polling replica per bot token.
+
+## Maritime webhook deployment
+
+The Dockerfile now runs `webhook_server.py`, which binds Maritime's injected `PORT`, serves `/health` and `/chat`, and accepts authenticated Telegram updates at `/telegram`. Use Maritime's public web agent deployment for the repository. In the dashboard or CLI, connect the GitHub repo, choose the `main` branch, and enable a public HTTPS URL so Telegram can reach the webhook. Set `TELEGRAM_BOT_TOKEN`, a random `TELEGRAM_WEBHOOK_SECRET`, `DATABASE_PATH=/data/scout.db`, `DEMO_MODE=false`, and any provider credentials as encrypted environment variables. Do not copy `.env` to GitHub. Import the supplier workbook into the hosted `/data/scout.db` if those records are needed there.
+
+After Maritime reports healthy, stop the local polling bot. Set the same token and webhook secret locally, then run `python configure_webhook.py https://<your-agent-id>.mtm.sh` once. Check Telegram's `getWebhookInfo` for delivery errors and send `/start` to the bot. Do not start `bot.py` while the webhook is active. Maritime's automatic sleep means in-process 15-minute watches do not run while sleeping; configure a platform schedule before claiming continuous alerting. The hosted deployment has not been performed or verified on a Maritime account.
+
+Deployment references: https://maritime.sh/docs/web-apps ; https://maritime.sh/docs/frameworks/custom ; https://maritime.sh/docs/configuration
