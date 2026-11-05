@@ -75,3 +75,8 @@ The supplied `GPU_Supplier_Email_Audit_2026-10-21 (1).xlsx` has been imported in
 To repeat the import after updating the workbook: `.\.venv\Scripts\python import_suppliers.py "..\GPU_Supplier_Email_Audit_2026-10-21 (1).xlsx"`. The import is idempotent for the same file hash. Keep the workbook and database private; they contain correspondence and commercial details. For Maritime deployment, transfer the database through its supported persistent volume or reimport the workbook there. A local import does not automatically appear in a cloud container.
 
 Submission status: Telegram and AgentMail credentials validate; `DEMO_MODE=false`; Google supplier research is configured through SerpApi. Vast.ai, Lambda and Keiki keys are currently absent, so live provider offers and free-form language parsing are not available. The bot is usable for structured task creation, supplier audit lookup, Google research, drafts and approved AgentMail sending. Those external flows have not been verified end to end with a real supplier.
+
+
+## Telegram availability
+
+Telegram hosts the chat interface; the polling Python process must stay running to answer. On this workstation the bot can be started with `.\.venv\Scripts\python bot.py`. Closing that process or turning off the computer takes the bot offline. The source repository alone does not deploy the process. A continuously available public submission requires a container host such as Maritime with persistent `/data` storage and the environment variables from `.env.example`. Keep exactly one polling replica per bot token.
