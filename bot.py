@@ -1,7 +1,7 @@
 import json, os, sqlite3, logging, asyncio, socket, hashlib, re
 from telegram.error import Conflict, NetworkError
 from integrations import lambda_search, Outreach
-from research import Research, summaries
+from research import Research, summaries, shortlist, search_configured
 from dataclasses import dataclass
 import httpx
 from dotenv import load_dotenv
@@ -75,10 +75,8 @@ class Scout:
             return offers
         if os.getenv('VAST_API_KEY'):
             names.append('Vast.ai'); jobs.append(self.search_vast(c))
-        else: coverage.append('Vast.ai: not configured')
         if os.getenv('LAMBDA_API_KEY'):
             names.append('Lambda'); jobs.append(lambda_search(c,self.request))
-        else: coverage.append('Lambda: not configured')
         offers=[]
         for name,result in zip(names,await asyncio.gather(*jobs,return_exceptions=True)):
             if isinstance(result,Exception): coverage.append(name+': unavailable')
@@ -112,9 +110,13 @@ async def handle(update:Update, ctx:ContextTypes.DEFAULT_TYPE):
     body=text.partition(' ')[2]
     try:
         if command in ['/start','/help']:
-            reply='GPU Scout 🔎\n/find <requirements> — search\n/watch <requirements> — monitor every 15 minutes\n/status — your tasks\n/stop <task id> — cancel watch\n/quote <task id> <supplier email> — review RFQ before approval\n/research <task id> — Google supplier research\n/report <task id> — saved research\n/contact <task id> <supplier number> — tailored inquiry\n/suppliers <name or GPU> — imported supplier audit\n/sources — coverage\nExample: /find 8 H100 SXM in US under $2.50 per GPU-hour for 3 months\nDemo syntax: /find H100_SXM 8 2.50 US'
+            reply='GPU Scout 🔎\n/find <requirements> — search Google and your supplier list\n/status — your searches\n/quote <task id> <supplier email> — review an inquiry\n/research <task id> — investigate pricing and contacts\n/report <task id> — full search results\n/contact <task id> <supplier number> — tailored inquiry\n/suppliers <name or GPU> — imported supplier audit\n/sources — search sources\nExample: /find 8 H100 SXM in US under $2.50 per GPU-hour for 3 months'
         elif command=='/sources':
-            reply='Vast.ai: live offer API (or explicitly simulated in demo). Keiki: requirement extraction. Supermemory: optional per-user requirement storage. Maritime: container hosting. PumpGTM: optional launch/growth service. Lambda: live capacity API when configured. AgentMail: approved email inquiries. Google supplier research via SerpApi: /research. Browser forms are not connected.'
+            available=['Your imported supplier audit (historical reference)']
+            if search_configured(): available.insert(0,'Google search and supplier websites')
+            if os.getenv('VAST_API_KEY'): available.append('Vast.ai live listings')
+            if os.getenv('LAMBDA_API_KEY'): available.append('Lambda live capacity')
+            reply='Search sources:\n'+'\n'.join(available)+'\n\nEmails are drafted for your review and sent only after /approve.'
         elif command=='/suppliers':
             import supplier_data
             reply=supplier_data.lookup(scout.db,owner,body)
@@ -137,7 +139,6 @@ async def handle(update:Update, ctx:ContextTypes.DEFAULT_TYPE):
             else:
                 if command=='/research':
                     if scout.demo: raise ValueError('Google research requires live mode. No simulated research is supplied.')
-                    if not os.getenv('SERPAPI_API_KEY'): raise ValueError('Configure SERPAPI_API_KEY for Google research.')
                     await update.effective_message.reply_text('Researching Google results and supplier pricing/contact pages. This may take several minutes.')
                     report=await research.run(task,owner,c)
                 else: report=research.get(task,owner)
@@ -163,11 +164,14 @@ async def handle(update:Update, ctx:ContextTypes.DEFAULT_TYPE):
         else:
             c=await scout.parse(body if command in ['/find','/watch'] else text,owner)
             task=scout.save(owner,c,command=='/watch')
-            offers=await scout.search(c)
+            await update.effective_message.reply_text(f'Task #{task}: searching Google and your supplier list for {c.count} × {c.gpu.replace("_"," ")} in {c.region or "any region"}, up to ${c.max_price:.2f}/GPU-hour…')
+            offers,report=await asyncio.gather(scout.search(c),Research(scout.db).run(task,owner,c,deep=False))
             scout.db.execute('UPDATE tasks SET status=? WHERE id=?',('searched',task)); scout.db.commit()
-            reply=f'Task #{task}\n'+render(offers)+'\n'+getattr(scout,'coverage','Demo coverage only')
+            if offers:
+                await update.effective_message.reply_text(render(offers)[:3900],disable_web_page_preview=True)
+            reply=f'Task #{task}\n'+shortlist(report,task)
             try: await scout.remember(owner,task,c)
-            except Exception: reply+='\nMemory service unavailable; task saved locally.'
+            except Exception: log.warning('Optional memory write failed; task remains saved')
         await update.effective_message.reply_text(reply[:4000])
     except (ValueError,KeyError) as e:
         await update.effective_message.reply_text('Could not process request: '+str(e)[:250])

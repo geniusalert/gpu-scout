@@ -2,3 +2,7 @@
 *.db
 .venv
 __pycache__
+
+.env.*
+.git/
+*.log
